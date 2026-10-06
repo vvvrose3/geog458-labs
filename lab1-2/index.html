@@ -1,0 +1,38 @@
+<html lang='en'>
+<head>
+    <meta charset='utf-8' />
+    <title>my First Map</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1' />
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+   </style>
+</head>
+<body>
+   <div id='map'></div>
+   <script>
+      mapboxgl.accessToken = 'pk.eyJ1IjoidnZ2cm9zZTMiLCJhIjoiY211d3o2cWtuMDM4bTJ5b2J1ZzFkbnF5MiJ9.zohqJ3O5rBZqHsdbcDcwnQ';
+      const mymap = new mapboxgl.Map({ // Creating a new Mapbox GL JS map instance
+             container: 'map', // The identification of the element where the map will be rendered
+             //style: 'mapbox://styles/mapbox/standard-satellite', // Basemap
+             //projection: 'globe', //Display the map as a globe since satellite-v9 defaults to Mercator
+             center: [-122.3081, 47.6558], // Centering the map on Suzzallo Library at UW Campus
+             zoom: 16 // Zooming into the map for better focus on chosen center
+          });
+
+         //Map style properties:
+         mymap.on('style.load', () => { // After map has loaded, adjust map style properties
+            mymap.setConfigProperty('basemap', 'lightPreset', 'dusk'); // Light Preset: controlling the time of day (shadows). Useful for adding spatial depth and enhancing buildings/realism
+            mymap.setConfigProperty('basemap', 'showPointOfInterestLabels', true); // Boolean for turning on/off labels for points of interest. Helpful for orienting users to familiar locations on map via label/name
+            mymap.setConfigProperty('basemap', 'show3dObjects', true); // Boolean for displaying 3D objects on map. Turns flat images into 3-dimensional ones to accurately represent spatial relationships. Useful for visualizations that depend on buildings/landmarks/trees, etc., and enhances the use of shadows
+            mymap.setConfigProperty('basemap', 'showTransitLabels', true); // Boolean for displaying transit labels. Adds appropriate icon on map for transit method (bus, lightrail, etc.). Useful for maps that focus on transportation accessibility (determining transit options for a neighborhood).
+         });
+
+mymap.addControl(new mapboxgl.FullscreenControl()); // Allows users to enter/exit fullscreen
+mymap.addControl(new mapboxgl.NavigationControl()); // Allows users to navigate the map
+
+</script>
+</body>
+</html>
