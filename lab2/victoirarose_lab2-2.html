@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Populations in Context</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.css" rel="stylesheet">
+    <script src="https://api.mapbox.com/mapbox-gl-js/v3.6.0/mapbox-gl.js"></script>
+    <style>
+        /* Map Title */
+        #map-title {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 10;
+        }
+
+        /* Main Title */
+        #map-title h2 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        /* Subtitle */
+        #map-title p {
+            margin: 0;
+            font-size: 13px;
+            color: #555;
+        }
+
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+
+        /* Layout of the legend panel. */
+        #legend {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 200px;
+            background: #fff;
+            margin-right: 20px;
+            margin-bottom: 40px;
+            padding: 10px 20px 10px 10px;
+            border-radius: 3px;
+            text-align: left;
+        }
+
+        #legend-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-height: 30px;
+        }
+
+        .legend-symbol {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            flex-shrink: 0;
+        }
+
+        .break {
+            position: relative;
+            margin: 0;
+            padding: 10px 0;
+        }
+
+        /* Circle symbol for Key */
+        .dot {
+            display: inline-block;
+            margin-top: 5px;
+            border-radius: 50%;
+            opacity: 0.8;
+        }
+
+        /* Link color within the legend. */
+        #legend a {
+            color: black;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <div id="map-title">
+        <h2>Populations in Context</h2>
+        <p>Highlighting Cities with 10 million or more Inhabitants</p>
+    </div>
+    
+    <div id="legend"></div>
+    <script>
+        // Anchor the legend to the HTML element with id="legend".
+        const legend = document.getElementById('legend');
+        const classes = [
+            {
+                label: '15,001 - 99,999',
+                radius: 3,
+                color: '#9ecae1'
+            },
+            {
+                label: '100,000 - 999,999',
+                radius: 5,
+                color: '#4292c6'
+            },
+            {
+                label: '1,000,000 - 9,999,999',
+                radius: 9,
+                color: '#fd8d3c'
+            },
+            {
+                label: '10,000,000+',
+                radius: 17,
+                color: '#e31a1c'
+            }
+        ]
+
+        const labels = ['<div style="text-align: center;"><strong>City Population</strong></div>'];
+
+        for (let i = 0; i < classes.length; i++) {
+            const item = classes[i];
+            const diameter = 2 * item.radius;
+
+        labels.push(`
+            <div style="display: flex; align-items: center; gap: 8px; height: 40px;">
+                <span style="display: flex; align-items: center; justify-content: center; width: 36px; flex-shrink: 0;">
+                    <i class="dot" style="background: ${item.color};
+                        width: ${diameter}px; height: ${diameter}px;
+                        margin-top: 0;"></i>
+                </span>
+                <span>${item.label}</span>
+            </div>
+        `);
+        }
+
+        const source =
+            '<p style="font-size:9pt; margin-bottom:0;">Source: ' +
+            '<a href="https://www.naturalearthdata.com/downloads/10m-cultural-vectors/10m-populated-places/">Natural Earth</a></p>';
+            
+        legend.innerHTML = labels.join('') + source;
+    </script>
+</body>
+    <script>
+        mapboxgl.accessToken = 'pk.eyJ1IjoidnZ2cm9zZTMiLCJhIjoiY211d3o2cWtuMDM4bTJ5b2J1ZzFkbnF5MiJ9.zohqJ3O5rBZqHsdbcDcwnQ';
+        const mymap = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/dark-v11',
+            projection: 'globe',
+            center: [-96, 37.8],
+            zoom: 1
+        });
+
+
+        mymap.on('style.load', () => {
+            mymap.setFog({});
+        });
+
+        mymap.on('load', () => {
+            // Load the population data from a GeoJSON file and add it as a source to the map.
+            mymap.addSource('population', {
+                type: 'geojson',
+                data: 'data/world-cities.geojson'
+            });
+
+            // Circle Layer: Populations
+            // Graduated population classification classes:
+            // below 100,000; 100,000 - 999,999; 1,000,000 - 9,999,999; 10,000,000+
+            // The highest class highlights the 10 largest records in dataset
+            // Circle sizes increase with population, emphasizing larger cities
+            // Colors progress from blue (smaller) to orange to red (largest), allowing for quick visual distinction between population categories
+            mymap.addLayer({
+                id: 'population-layer',
+                type: 'circle',
+                source: 'population',
+
+                paint: {
+                    'circle-radius': [
+                        'step',
+                        ['to-number', ['get', 'population'], 0],
+                        3,          // Below 100,000
+                        100000,     5,
+                        1000000,    9,
+                        10000000,   17,
+                    ],
+
+
+                    'circle-color': [
+                        'step',
+                        ['to-number', ['get', 'population'], 0],
+                        '#9ecae1',  // Below 100,000
+                        100000,     '#4292c6',
+                        1000000,    '#fd8d3c',
+                        10000000,   '#e31a1c',
+                    ],
+                    'circle-stroke-color': 'white',
+                    'circle-opacity': 0.8,
+                    'circle-stroke-width': 0.5
+                }
+            });
+
+
+            // Click a city circle to view the name and population
+            mymap.on('click', 'population-layer', (event) => {
+                const feature = event.features[0];
+                const coordinates = feature.geometry.coordinates.slice(0, 2);
+                const name = feature.properties.accentcity;
+                const population = Number(
+                    feature.properties.population
+                ).toLocaleString();
+            
+                new mapboxgl.Popup()
+                    .setLngLat(coordinates)
+                    .setHTML(`<strong>City:</strong> ${name}<br><strong>Population:</strong> ${population}`)
+                    .addTo(mymap);
+            });
+
+            // Change the cursor to a pointer when hovering over a population circle.
+            mymap.on('mouseenter', 'population-layer', () => {
+                mymap.getCanvas().style.cursor = 'pointer';
+            });
+
+            // Change the cursor back to the default when the mouse leaves a population circle.
+            mymap.on('mouseleave', 'population-layer', () => {
+                mymap.getCanvas().style.cursor = '';
+            });
+        });
+
+    </script>
+</body>
+</html>
