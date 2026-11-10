@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lab 5 — Millions of Data, Flow Map</title>
+  <link href="https://api.mapbox.com/mapbox-gl-js/v3.32.0/mapbox-gl.css" rel="stylesheet">
+  <script src="https://api.mapbox.com/mapbox-gl-js/v3.32.0/mapbox-gl.js"></script>
+  <script src="https://unpkg.com/deck.gl@^9.0.0/dist.min.js"></script>
+  <style>
+    body { margin: 0; font: 14px Arial, sans-serif; background: #101924; }
+    #map { position: absolute; inset: 0; }
+    #panel { position: absolute; top: 16px; left: 16px; max-width: calc(100vw - 64px);
+      padding: 16px; background: #172333; color: white; border-radius: 8px; }
+    h1 { margin: 0 0 12px; font-size: 19px; }
+    p { color: #c0cfdd; font-size: 12px; }
+    label { display: block; margin: 12px 0 6px; }
+    select, button { padding: 8px; border: 1px solid #637487; border-radius: 4px;
+      background: #26394f; color: white; font: inherit; }
+    button { cursor: pointer; margin-left: 6px; }
+
+
+
+  /* Timeline panel */
+  #timeline-panel {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: 26px;
+    z-index: 2;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 14px 18px;
+    border-radius: 8px;
+    background: rgba(23, 35, 51, 0.96);
+    color: white;
+    box-shadow: 0 3px 15px #0007;
+  }
+
+  .timeline-heading,
+  .timeline-controls,
+  .clock-row,
+  .tick-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .timeline-heading strong {
+    font-size: 15px;
+  }
+
+  .subtitle {
+    font-size: 11px;
+    color: #b9c9d8;
+  }
+
+  .clock-row {
+    margin-top: 8px;
+    font-size: 12px;
+  }
+
+  #utc-clock {
+    font-weight: bold;
+  }
+
+  #local-clock {
+    color: #b9c9d8;
+  }
+
+  /* Hourly vessel activity bars */
+  #histogram {
+    height: 64px;
+    display: grid;
+    grid-template-columns: repeat(24, minmax(0, 1fr));
+    align-items: end;
+    gap: 3px;
+    margin: 14px 0 5px;
+  }
+
+  .bar {
+    background: #526c80;
+    border-radius: 2px 2px 0 0;
+    transition: background 0.1s;
+  }
+
+  .bar.active {
+    background: #fd805d;
+  }
+
+  .tick-row {
+    font-size: 10px;
+    color: #aebfce;
+  }
+
+  #time-slider {
+    width: 100%;
+    margin: 8px 0 0;
+    accent-color: #fd805d;
+    cursor: pointer;
+  }
+
+  /* Playback controls */
+  .timeline-controls {
+    margin-top: 10px;
+    justify-content: flex-start;
+  }
+
+  .timeline-controls label {
+    margin: 0;
+    display: inline-flex;
+    gap: 7px;
+    align-items: center;
+    font-size: 12px;
+  }
+
+  .timeline-controls select,
+  .timeline-controls button {
+    padding: 5px 8px;
+  }
+
+  #play-stop {
+    min-width: 70px;
+    margin-left: 0;
+  }
+
+  .timeline-note {
+    margin: 10px 0 0;
+    font-size: 11px;
+  }
+
+  /* Smaller screens */
+  @media (max-width: 600px) {
+    #timeline-panel {
+      left: 8px;
+      right: 8px;
+      bottom: 22px;
+      padding: 10px;
+    }
+
+    #histogram {
+      height: 45px;
+      gap: 1px;
+    }
+  }
+
+
+
+
+
+
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="panel">
+    <h1>Millions of Data, Flow Map</h1>
+    <p id="status" role="status">Loading AIS paths...</p>
+
+    <label for="vessel-type">Vessel type</label>
+    <select id="vessel-type">
+        <option value="all">All vessels</option>
+        <option value="passenger" selected>Passenger</option>
+        <option value="tanker">Tanker</option>
+        <option value="cargo">Cargo</option>
+        <option value="other">Other vessels</option>
+    </select>
+
+<!-- ////////////////// Original start/stop button //////////////////-->
+ 
+<!-- <button id="play-stop" type="button" aria-pressed="true">Stop</button> -->
+
+
+
+// AIS timestamps are seconds since midnight UTC,
+// March 4, 2025.
+const timeOriginUTC = Date.parse('2025-03-04T00:00:00Z');
+
+    <!-- Interactive vessel activity timeline -->
+    <section id="timeline-panel" aria-label="Vessel movement timeline">
+
+      <div class="timeline-heading">
+        <strong>Vessel activity timeline</strong>
+        <span class="subtitle">
+          March 4, 2025 · UTC · Vessels reporting AIS per hour
+        </span>
+      </div>
+
+      <!-- Current playback time -->
+      <div class="clock-row">
+        <span id="utc-clock">Loading time...</span>
+        <span id="local-clock"></span>
+      </div>
+
+      <!-- Hourly traffic histogram -->
+      <div id="histogram"
+          aria-label="Hourly distribution of reporting vessels">
+      </div>
+
+      <div class="tick-row" aria-hidden="true">
+        <span>00:00</span>
+        <span>04:00</span>
+        <span>08:00</span>
+        <span>12:00</span>
+        <span>16:00</span>
+        <span>20:00</span>
+        <span>24:00</span>
+      </div>
+
+      <!-- Interactive time slider -->
+      <input
+        id="time-slider"
+        type="range"
+        min="0"
+        max="86399"
+        step="60"
+        value="3600"
+        aria-label="Select playback time in UTC"
+      >
+
+      <!-- Playback settings -->
+      <div class="timeline-controls">
+
+        <button id="play-stop" type="button" aria-pressed="true">
+          Pause
+        </button>
+
+        <label for="playback-speed">
+          Speed
+          <select id="playback-speed">
+            <option value="0.5">0.5×</option>
+            <option value="1" selected>1×</option>
+            <option value="2">2×</option>
+            <option value="4">4×</option>
+          </select>
+        </label>
+
+        <label for="trail-length">
+          Visible trail
+          <select id="trail-length">
+            <option value="900">15 min</option>
+            <option value="1800">30 min</option>
+            <option value="3600" selected>60 min</option>
+            <option value="7200">120 min</option>
+          </select>
+        </label>
+
+      </div>
+
+      <p class="timeline-note">
+        Bars show unique vessels reporting at least one
+        AIS position during each hour.
+      </p>
+
+    </section>
+
+
+  </div>
+  <script>
+    // STEP 1: Create the map and load the preprocessed JSON.
+    mapboxgl.accessToken = 'pk.eyJ1IjoidnZ2cm9zZTMiLCJhIjoiY211d3o2cWtuMDM4bTJ5b2J1ZzFkbnF5MiJ9.zohqJ3O5rBZqHsdbcDcwnQ';
+    const map = new mapboxgl.Map({
+      container: 'map', style: 'mapbox://styles/mapbox/dark-v11',
+      center: [-90.43, 29.73], zoom: 8, pitch: 35
+    });
+    const overlay = new deck.MapboxOverlay({layers: []});
+    map.addControl(overlay);
+
+      
+    async function main() {
+      const status = document.getElementById('status');
+
+      // Load the existing AIS data.
+      const response = await fetch('./ais_trips_southeast.json');
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const data = await response.json();
+      const trips = data.filter(d =>
+        d.path.length >= 2 &&
+        d.path.length === d.timestamps.length
+      );
+
+      if (!trips.length) {
+        throw new Error('No valid vessel paths found.');
+      }
+
+      // Get interface elements.
+      const vesselType = document.getElementById('vessel-type');
+      const slider = document.getElementById('time-slider');
+      const playStop = document.getElementById('play-stop');
+      const speedSelect = document.getElementById('playback-speed');
+      const trailSelect = document.getElementById('trail-length');
+      const utcClock = document.getElementById('utc-clock');
+      const localClock = document.getElementById('local-clock');
+      const histogram = document.getElementById('histogram');
+
+      // Animation settings.
+      let displayedTrips = trips;
+      let playing = true;
+      let speed = 1;
+      let trailLength = 3600;
+
+      const startTime = Math.min(
+        ...trips.map(d => Number(d.timestamps[0]))
+      );
+
+      const endTime = Math.max(
+        ...trips.map(d => Number(d.timestamps.at(-1)))
+      );
+
+      let currentTime = Math.min(startTime + 3600, endTime);
+      let previousFrame = null;
+
+      slider.min = String(Math.max(0, Math.floor(startTime)));
+      slider.max = String(Math.ceil(endTime));
+
+      // ------------------------------------
+      // CREATE HOURLY HISTOGRAM
+      // ------------------------------------
+
+      const bars = Array.from({ length: 24 }, (_, i) => {
+        const bar = document.createElement('div');
+        bar.className = 'bar';
+        histogram.appendChild(bar);
+        return bar;
+      });
+
+      // Count distinct vessels reporting during each hour.
+      function updateHistogram() {
+        const counts = new Array(24).fill(0);
+
+        for (const trip of displayedTrips) {
+          // Track hours already counted for this vessel.
+          const seenHours = new Set();
+
+          for (const stamp of trip.timestamps) {
+            const hour = Math.floor(Number(stamp) / 3600);
+
+            if (hour >= 0 && hour < 24) {
+              seenHours.add(hour);
+            }
+          }
+
+          for (const hour of seenHours) {
+            counts[hour] += 1;
+          }
+        }
+
+        const maxCount = Math.max(1, ...counts);
+
+        bars.forEach((bar, i) => {
+          const height = (counts[i] / maxCount) * 100;
+
+          bar.style.height = `${height}%`;
+
+          bar.title =
+            `${String(i).padStart(2, '0')}:00 UTC: ` +
+            `${counts[i]} vessels`;
+        });
+      }
+
+      // ------------------------------------
+      // UPDATE CLOCK AND TIME SLIDER
+      // ------------------------------------
+
+      function updateClock() {
+        const date = new Date(
+          timeOriginUTC + currentTime * 1000
+        );
+
+        // Display UTC.
+        utcClock.textContent =
+          date.toISOString().slice(0, 16).replace('T', ' ') +
+          ' UTC';
+
+        // Display New Orleans local time.
+        localClock.textContent =
+          new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Chicago',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          }).format(date) + ' (New Orleans)';
+
+        // Keep the slider synchronized.
+        slider.value = String(Math.round(currentTime));
+
+        // Highlight the current hour in the histogram.
+        const activeHour = Math.floor(currentTime / 3600);
+
+        bars.forEach((bar, i) => {
+          bar.classList.toggle('active', i === activeHour);
+        });
+      }
+
+      // ------------------------------------
+      // DRAW VESSEL TRAJECTORIES
+      // ------------------------------------
+
+      function draw() {
+        overlay.setProps({
+          layers: [
+            new deck.TripsLayer({
+              id: 'ais-trips',
+              data: displayedTrips,
+
+              getPath: d => d.path,
+              getTimestamps: d => d.timestamps,
+
+              getColor: [253, 128, 93],
+              widthMinPixels: 3,
+
+              currentTime: currentTime,
+              trailLength: trailLength,
+
+              capRounded: true,
+              jointRounded: true
+            })
+          ]
+        });
+
+        updateClock();
+      }
+
+      // ------------------------------------
+      // FILTER VESSELS BY TYPE
+      // ------------------------------------
+
+      function applyFilter() {
+        displayedTrips = trips.filter(d => {
+          const type = Number(d.type);
+
+          if (vesselType.value === 'all') return true;
+
+          if (vesselType.value === 'passenger') {
+            return type >= 60 && type < 70;
+          }
+
+          if (vesselType.value === 'tanker') {
+            return type >= 80 && type < 90;
+          }
+
+          if (vesselType.value === 'cargo') {
+            return type >= 70 && type < 80;
+          }
+
+          return !(type >= 60 && type < 90);
+        });
+
+        status.textContent =
+          `${displayedTrips.length.toLocaleString()} paths selected`;
+
+        updateHistogram();
+        draw();
+      }
+
+      vesselType.addEventListener('change', applyFilter);
+
+      // ------------------------------------
+      // PLAY AND PAUSE
+      // ------------------------------------
+
+      playStop.addEventListener('click', () => {
+        playing = !playing;
+
+        playStop.textContent = playing ? 'Pause' : 'Play';
+        playStop.setAttribute('aria-pressed', String(playing));
+
+        previousFrame = null;
+      });
+
+      // ------------------------------------
+      // TIME SLIDER
+      // ------------------------------------
+
+      slider.addEventListener('input', () => {
+        currentTime = Number(slider.value);
+
+        // Pause while inspecting a selected time.
+        playing = false;
+
+        playStop.textContent = 'Play';
+        playStop.setAttribute('aria-pressed', 'false');
+
+        previousFrame = null;
+        draw();
+      });
+
+      // ------------------------------------
+      // PLAYBACK SPEED
+      // ------------------------------------
+
+      speedSelect.addEventListener('change', () => {
+        speed = Number(speedSelect.value);
+      });
+
+      // ------------------------------------
+      // TRAIL LENGTH
+      // ------------------------------------
+
+      trailSelect.addEventListener('change', () => {
+        trailLength = Number(trailSelect.value);
+        draw();
+      });
+
+      // ------------------------------------
+      // ANIMATION LOOP
+      // ------------------------------------
+
+      // Original speed = 15 minutes of data per real second.
+      function animate(now) {
+        const elapsed = previousFrame === null
+          ? 0
+          : Math.min((now - previousFrame) / 1000, 0.2);
+
+        previousFrame = now;
+
+        if (playing) {
+          currentTime += elapsed * 900 * speed;
+
+          if (currentTime > endTime) {
+            currentTime = startTime;
+          }
+
+          draw();
+        }
+
+        requestAnimationFrame(animate);
+      }
+
+      // Initialize the map.
+      applyFilter();
+      requestAnimationFrame(animate);
+    }
+
+
+    main().catch(error => {
+      document.getElementById('status').textContent = `Error: ${error.message}. Check your file path and local server.`;
+      console.error(error);
+    });
+  </script>
+</body>
+</html>
