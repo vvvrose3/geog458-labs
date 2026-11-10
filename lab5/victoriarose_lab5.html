@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lab 5 — Millions of Data, Flow Map</title>
+  <title>Mississippi River Vessel Activity | March 4, 2025</title>
   <link href="https://api.mapbox.com/mapbox-gl-js/v3.32.0/mapbox-gl.css" rel="stylesheet">
   <script src="https://api.mapbox.com/mapbox-gl-js/v3.32.0/mapbox-gl.js"></script>
   <script src="https://unpkg.com/deck.gl@^9.0.0/dist.min.js"></script>
@@ -25,7 +25,8 @@
 <body>
   <div id="map"></div>
   <div id="panel">
-    <h1>Millions of Data, Flow Map</h1>
+    <h1>Navigating the Mississippi River</h1>
+    <p>AIS Vessel Movements | March 4, 2025 (UTC)</p>
     <p id="status" role="status">Loading AIS paths...</p>
 
     <label for="vessel-type">Vessel type</label>
@@ -36,7 +37,20 @@
         <option value="other">Other vessels</option>
     </select>
 
+<!-- ////// PLAY BUTTON AND TIME SLIDER ////// -->
     <button id="play-stop" type="button" aria-pressed="true">Stop</button>
+    <p>Data time: <time id="time-display">Loading date/time...</time></p>
+    <label for="time-slider">Data time (New Orleans: CST)</label>
+    <input id="time-slider" type="range" min="0" max="1" value="0" step="1" disabled
+      style="display:block;width:100%;margin:8px 0;accent-color:#fd805d;">
+
+    <label for="playback-speed">Playback speed (data time per real second)</label>
+    <select id="playback-speed">
+      <option value="300">5 minutes</option>
+      <option value="900" selected>15 minutes (default)</option>
+      <option value="1800">30 minutes</option>
+      <option value="3600">1 hour</option>
+    </select>
 
   </div>
   <script>
@@ -59,22 +73,62 @@
       let displayedTrips = trips;
       let playing = true;
       const startTime = Math.min(...trips.map(d => d.timestamps[0]));
-      const endTime = Math.max(...trips.map(d => d.timestamps.at(-1))) + 3600;
+      const endTime = Math.max(...trips.map(d => d.timestamps.at(-1)));
       let currentTime = Math.min(startTime + 3600, endTime);
       let previousFrame = null;
       status.textContent = `${trips.length} paths loaded`;
 
-      function draw() {
-        overlay.setProps({layers: [new deck.TripsLayer({
-          id: 'ais-trips', data: displayedTrips,
-          getPath: d => d.path,
-          getTimestamps: d => d.timestamps,
-          getColor: [253, 128, 93],
-          widthMinPixels: 3,
-          currentTime: currentTime,
-          trailLength: 3600
-        })]});
-      }      
+
+    const metadataResponse = await fetch('./ais_trips_metadata_southeast.json');
+    if (!metadataResponse.ok) {
+      throw new Error('Could not load ais_trips_metadata_southeast.json.')};
+    const metadata = await metadataResponse.json();
+    const timeOrigin = Date.parse(metadata.time_origin_utc);
+    if (!Number.isFinite(timeOrigin)) {
+      throw new Error('Invalid time_origin_utc in metadata.')};
+    const timeDisplay = document.getElementById('time-display');
+    const timeSlider = document.getElementById('time-slider');
+    timeSlider.min = String(startTime);
+    timeSlider.max = String(endTime);
+    timeSlider.disabled = false;
+    const timeFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Chicago',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23', timeZoneName: 'short'
+    });
+
+    function updateTimeUI() {
+      const date = new Date(timeOrigin + Math.floor(currentTime) * 1000);
+      timeDisplay.dateTime = date.toISOString();
+      timeDisplay.textContent = timeFormatter.format(date);
+      timeSlider.value = String(Math.floor(currentTime));
+      timeSlider.setAttribute('aria-valuetext', timeDisplay.textContent);
+    }
+
+
+
+
+    function draw() {
+      overlay.setProps({
+        layers: [
+          new deck.TripsLayer({
+            id: 'ais-trips',
+            data: displayedTrips,
+            getPath: d => d.path,
+            getTimestamps: d => d.timestamps,
+            getColor: [253, 128, 93],
+            widthMinPixels: 3,
+            currentTime: currentTime,
+            trailLength: 3600
+          })
+        ]
+      });
+
+      // Synchronize the clock and slider with the map.
+      updateTimeUI();
+    }
+    
 
         const vesselType = document.getElementById('vessel-type');
 
@@ -93,20 +147,41 @@
         vesselType.addEventListener('change', applyFilter);
         applyFilter(); // Apply the default Passenger selection immediately.
 
-        const playStop = document.getElementById('play-stop');
 
-        playStop.addEventListener('click', () => {
-        playing = !playing;
+
+    // Play/Stop button and time slider
+      const playStop = document.getElementById('play-stop');
+
+      function setPlaying(value) {
+        playing = value;
+        previousFrame = null;
         playStop.textContent = playing ? 'Stop' : 'Play';
         playStop.setAttribute('aria-pressed', String(playing));
-        });
+      }
 
-      // Advance data time by 15 minutes per real second.
+      playStop.addEventListener('click', () => setPlaying(!playing));
+
+      timeSlider.addEventListener('input', () => {
+        setPlaying(false);
+        currentTime = Number(timeSlider.value);
+        draw();
+      });
+
+
+      const playbackSpeed = document.getElementById('playback-speed');
+      let secondsPerSecond = Number(playbackSpeed.value);
+
+      playbackSpeed.addEventListener('change', () => {
+        secondsPerSecond = Number(playbackSpeed.value);
+      });
+
+
+      // Advance data time at the selected playback speed.
       function animate(now) {
         const elapsed = previousFrame === null ? 0 : Math.min((now - previousFrame) / 1000, 0.2);
         previousFrame = now;
         if (playing) {
-          currentTime += elapsed * 900;
+          currentTime += elapsed * secondsPerSecond;
           if (currentTime > endTime) currentTime = startTime;
           draw();
         }
