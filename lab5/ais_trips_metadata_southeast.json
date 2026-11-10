@@ -1,0 +1,1 @@
+{"time_origin_utc":"2025-03-04T00:00:00+00:00","timestamp_unit":"seconds since time_origin_utc","coordinate_order":["longitude","latitude"],"sog_unit":"knots","angle_unit":"degrees","input_rows":1192472,"invalid_rows_removed":0,"duplicate_rows_removed":402,"output_observations":1192070,"vessel_count":1748,"max_timestamp":86399.0}
